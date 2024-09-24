@@ -1,0 +1,175 @@
+#!/usr/bin/env node
+
+// in current dir read spago.yaml
+// backup to spago-original-backup.yaml
+
+// it is like
+
+// workspace:
+//   packageSet:
+//     registry: 56.4.0
+//   # backend:
+//   #   cmd: purs-backend-es
+//   #   args:
+//   #     - build
+//   extraPackages:
+//     tldr:
+//       git: "https://github.com/mikesol/purescript-tldr.git"
+//       ref: "7945d3f"
+//       dependencies: [prelude]
+
+// const projectsDir = process.env.HOME + '/projects';
+
+// read projectsDir/spago-myglobal.yaml
+
+//replace extraPackages from original spago with content of projectsDir/spago-myglobal.yaml
+
+const fs = require('fs');
+const path = require('path');
+const YAML = require('yaml');
+const { execSync } = require('child_process');
+
+// Define the paths
+const projectsDir = process.env.HOME + '/projects';
+const currentDir = process.cwd();
+const spagoFile = path.join(currentDir, 'spago.yaml');
+const backupFile = path.join(currentDir, 'spago-original-backup.yaml');
+const globalLocalSpagoFile = path.join(currentDir, 'spago-myglobal.yaml');
+const globalSpagoFile = path.join(process.env.HOME, 'projects', 'spago-myglobal.yaml');
+const spagoExePath = `${projectsDir}/spago/bin/index.dev.js`
+
+// Helper function to run the command and parse the output
+function getPackageInfo(dir) {
+  try {
+    const cmd = `${spagoExePath} ls packages --json`;
+    const output = execSync(cmd, { cwd: dir, encoding: 'utf8' });
+    return JSON.parse(output);
+  } catch (error) {
+    console.error(`Failed to run command in ${dir}:`, error.message);
+    return null;
+  }
+}
+
+function getLocalPackages(dir) {
+  const packageInfo = getPackageInfo(dir);
+
+  if (!packageInfo) {
+    return [];
+  }
+
+  return Object.entries(packageInfo)
+    .filter(([, details]) => details.type === 'workspace')
+    .map(([name, _details]) => name);
+}
+
+// Step 1: Backup the original spago.yaml
+; (function () {
+  try {
+    if (fs.existsSync(backupFile)) {
+      console.log('Backup file already exists. Not making backup, using it.');
+      return
+    }
+    if (fs.existsSync(spagoFile)) {
+      fs.copyFileSync(spagoFile, backupFile);
+      console.log('Backup created: spago-original-backup.yaml');
+    } else {
+      console.error('spago.yaml not found in the current directory.');
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('Error creating backup:', error.message);
+    process.exit(1);
+  }
+})();
+
+// Step 2: Read the original spago.yaml
+let originalSpagoYaml;
+try {
+  if (fs.existsSync(backupFile)) {
+    originalSpagoYaml = YAML.parseDocument(fs.readFileSync(backupFile, 'utf8'));
+  } else {
+    originalSpagoYaml = YAML.parseDocument(fs.readFileSync(spagoFile, 'utf8'));
+  }
+} catch (error) {
+  console.error('Error reading spago.yaml:', error.message);
+  process.exit(1);
+}
+
+function jsonToYamlDocument(json) { return new YAML.Document(json) }
+
+// Step 3: Read the global spago-myglobal.yaml
+let customPackagesYaml;
+try {
+  if (fs.existsSync(globalLocalSpagoFile)) {
+    customPackagesYaml = YAML.parseDocument(fs.readFileSync(globalLocalSpagoFile, 'utf8'), { sortMapEntries: true });
+  } else if (fs.existsSync(globalSpagoFile)) {
+    const globalYaml = YAML.parseDocument(fs.readFileSync(globalSpagoFile, 'utf8', { sortMapEntries: true }));
+
+    fs.copyFileSync(backupFile, spagoFile);
+    const localPackagesNames = getLocalPackages(currentDir) // ['foo', 'bar']
+    console.log('localPackagesNames', localPackagesNames)
+    const contentWithoutLocal = sortYamlMap(removeKeysFrom(localPackagesNames, globalYaml))
+
+    fs.writeFileSync(globalLocalSpagoFile, contentWithoutLocal.toString(), 'utf8');
+    customPackagesYaml = contentWithoutLocal
+
+    // fs.copyFileSync(globalSpagoFile, globalLocalSpagoFile);
+  } else {
+    console.error('spago-myglobal.yaml not found in the projects directory.');
+    process.exit(1);
+  }
+} catch (error) {
+  console.error('Error reading spago-myglobal.yaml:', error.message);
+  process.exit(1);
+}
+
+// Remove keys from YAML object
+function removeKeysFrom(keysToRemove, yamlDocument) {
+  yamlDocument = yamlDocument.clone();
+  keysToRemove.forEach(key => { yamlDocument.delete(key) });
+  return yamlDocument
+}
+
+function sortYamlMap(yamlDocument) {
+  // Convert YAML document to a plain JavaScript object
+  const yamlObject = yamlDocument.toJSON();
+
+  // Function to recursively sort the keys of an object
+  function sortObject(obj) {
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      const sortedKeys = Object.keys(obj).sort();
+      const sortedObj = {};
+      sortedKeys.forEach(key => {
+        sortedObj[key] = sortObject(obj[key]); // Recursively sort nested objects
+      });
+      return sortedObj;
+    }
+    return obj; // Return non-object values as they are
+  }
+
+  // Sort the object
+  const sortedYamlObject = sortObject(yamlObject);
+
+  // Create a new YAML document with the sorted object
+  // return sortedYamlObject;
+  return jsonToYamlDocument(sortedYamlObject)
+  // return YAML.createDocument(sortedYamlObject);
+}
+
+// Step 4: Replace the extraPackages section in original spago.yaml
+try {
+  // fs.copyFileSync(backupFile, spagoFile);
+  // const localPackagesNames = getLocalPackages(currentDir) // ['foo', 'bar']
+  // console.log('localPackagesNames', localPackagesNames)
+
+  // customPackagesYaml = sortYamlMap(removeKeysFrom(localPackagesNames, customPackagesYaml))
+
+  originalSpagoYaml.setIn(['workspace', 'extraPackages'], customPackagesYaml)
+
+  // Step 5: Write the modified content back to spago.yaml
+  fs.writeFileSync(spagoFile, originalSpagoYaml.toString(), 'utf8');
+  console.log('extraPackages section replaced in spago.yaml');
+} catch (error) {
+  console.error('Error replacing extraPackages:', error.message);
+  process.exit(1);
+}

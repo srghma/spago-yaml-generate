@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+echo "cp -f ./spago-original-backup.yaml ./spago.yaml"
+cp -f ./spago-original-backup.yaml ./spago.yaml

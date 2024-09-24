@@ -36,6 +36,7 @@ const YAML = require('yaml');
 
 // Define the projects directory
 const projectsDir = process.env.HOME + '/projects';
+const spagoExePath = `${projectsDir}/spago/bin/index.dev.js`
 
 // Helper function to check if a directory contains spago.yaml
 function hasSpagoYaml(dir) {
@@ -45,7 +46,7 @@ function hasSpagoYaml(dir) {
 // Helper function to run the command and parse the output
 function getPackageInfo(dir) {
   try {
-    const cmd = `${projectsDir}/spago/bin/index.dev.js ls packages --json`;
+    const cmd = `${spagoExePath} ls packages --json`;
     const output = execSync(cmd, { cwd: dir, encoding: 'utf8' });
     return JSON.parse(output);
   } catch (error) {
@@ -60,50 +61,45 @@ const dirsWithSpagoYaml = fs.readdirSync(projectsDir)
   .filter(fs.lstatSync)
   .filter(hasSpagoYaml);
 
-// Process each directory and extract the (name, path) pairs
-const namePathPairs = [];
-
-console.log('dirsWithSpagoYaml', dirsWithSpagoYaml)
-
-dirsWithSpagoYaml.forEach(dir => {
+function getWorkspacePackages(dir) {
   const packageInfo = getPackageInfo(dir);
-  console.log('packageInfo', packageInfo)
-  if (packageInfo) {
-    Object.entries(packageInfo).forEach(([name, details]) => {
-      if (details.type === 'workspace') {
-        namePathPairs.push([name, dir, details.value.path === './' ? null : details.value.path]);
-      }
-    });
+  if (!packageInfo) {
+    return [];
   }
-});
+  return Object.entries(packageInfo)
+    .filter(([, details]) => details.type === 'workspace')
+    .map(([name, details]) => [name, dir, details.value.path]);
+}
+
+const namePathPairs = dirsWithSpagoYaml.flatMap(getWorkspacePackages)
 
 // Output the result
 console.log(namePathPairs);
 
 // for all namePathPairs
 // generate yaml like
-// extraPackages:
+//
 //   tldr:
 //     path: dir
 //     subdir: subdir # if present
 
-const yamlData = {
-  extraPackages: {}
-};
+const yamlData = {};
 
 namePathPairs.forEach(([name, dir, subdir]) => {
-  yamlData.extraPackages[name] = {
-    path: dir
+  yamlData[name] = {
+    // path: dir
+    path: subdir === './' ? dir : path.join(dir, subdir)
   };
-  if (subdir) {
-    yamlData.extraPackages[name].subdir = subdir;
-  }
+  // if (subdir) {
+  //   yamlData[name].subdir = subdir;
+  // }
 });
 
 // Convert the object to YAML format
 const yamlOutput = YAML.stringify(yamlData);
 
 // Output the YAML to console
-console.log(yamlData);
+// console.log(yamlData);
+console.log(yamlOutput);
 
 fs.writeFileSync(path.join(projectsDir, 'spago-myglobal.yaml'), yamlOutput, 'utf8');
