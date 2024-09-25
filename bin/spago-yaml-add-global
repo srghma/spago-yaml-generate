@@ -24,10 +24,15 @@
 
 //replace extraPackages from original spago with content of projectsDir/spago-myglobal.yaml
 
-const fs = require('fs');
-const path = require('path');
-const YAML = require('yaml');
-const { execSync } = require('child_process');
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'child_process';
+import YAML from 'yaml';
+
+// const fs = require('fs');
+// const path = require('path');
+// const YAML = require('yaml');
+// const { execSync } = require('child_process');
 
 // Define the paths
 const projectsDir = process.env.HOME + '/projects';

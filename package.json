@@ -1,5 +1,8 @@
 {
+  "type": "module",
   "dependencies": {
+    "fast-glob": "^3.3.2",
+    "simple-git": "^3.27.0",
     "yaml": "^2.5.0"
   }
 }
