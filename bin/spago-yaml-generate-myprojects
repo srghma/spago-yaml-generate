@@ -34,12 +34,10 @@
 // const { execSync } = require('child_process');
 // const YAML = require('yaml');
 
-import fg from 'fast-glob';
 import fs from 'node:fs';
 import path from 'node:path';
-// import { execSync } from 'child_process';
 import YAML from 'yaml';
-import simpleGit from 'simple-git';
+import { immediateDirs, spagoFilesNotIgnoredByGit, readSpagoFileAndReturnPathAndName } from '../lib/utils.js'
 
 // Define the projects directory
 const projectsDir = process.env.HOME + '/projects';
@@ -104,69 +102,6 @@ function findSpagoFiles(dir) {
   //
   // return results;
   //
-}
-
-function immediateDirs(dir) {
-  return fs.readdirSync(dir, { withFileTypes: true })
-    .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))  // Exclude hidden dirs
-    .map(dirent => path.join(dir, dirent.name));
-}
-
-/**
- * Find spago.yaml files within a given project directory
- * and ensure they're not ignored by Git
- */
-async function spagoFilesNotIgnoredByGit(projectDir) {
-  const spagoFiles = await fg(['**/spago.yaml', '!**/test-fixtures/**', '!**/test/**', '!**/docs/**', '!**/docs-search/**'], {
-    cwd: projectDir,
-    absolute: true,
-  });
-
-  const nonIgnoredFiles = [];
-  for (const file of spagoFiles) {
-    try {
-      const git = simpleGit(projectDir);
-
-      // Check if the file is ignored by Git
-      const isIgnored = await git.checkIgnore(file);
-      if (isIgnored.length === 0) {
-        nonIgnoredFiles.push(file);
-      } else {
-        console.log({ file, isIgnored })
-      }
-    } catch (error) {
-      if (error.message.includes('is outside repository')) {
-        // Handle case where file is not inside a Git repo
-        console.warn(`Warning: ${file} is not part of a Git repository.`);
-        // You can skip this file or log it for review
-      } else {
-        throw error; // Rethrow unexpected errors
-      }
-    }
-  }
-
-  return nonIgnoredFiles;
-}
-
-async function readSpagoFileAndReturnPathAndName(spagoYamlPath) {
-  try {
-    // Read the file contents
-    const fileContents = fs.readFileSync(spagoYamlPath, 'utf8');
-
-    // Parse the YAML contents
-    const document = YAML.parse(fileContents);
-    // console.log(document)
-
-    // Extract the project name
-    const name = document.package && document.package.name
-    if (!name) { return null; }
-
-    // Return the path and name
-    return { spagoYamlPath, name };
-  } catch (error) {
-    console.error(`Error reading or parsing ${spagoYamlPath}:`, error);
-    return null; // Return null in case of an error
-  }
 }
 
 async function main() {
