@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+
+import fs from 'node:fs';
+import path from 'node:path';
+import https from 'node:https';
+import YAML from 'yaml';
+
+const inputFile = 'bower.json';
+const outputFile = 'spago.yaml';
+
+// Read and parse bower.json
+let bowerJson = {};
+try {
+  bowerJson = JSON.parse(fs.readFileSync(inputFile, 'utf8'));
+} catch (error) {
+  console.error(`Error reading or parsing ${inputFile}:`, error);
+}
+
+console.log('bowerJson', bowerJson)
+
+// Extract information
+const name = (bowerJson.name || path.basename(process.cwd())).replace(/^purescript-/, '');
+const license = bowerJson.license || "MIT";
+const repoUrl = (bowerJson.repository || {}).url || `https://github.com/purescript-contrib/purescript-${name}`;
+const repoName = path.basename(repoUrl, '.git');
+const githubOwner = repoUrl.split('/').slice(-2, -1)[0];
+
+// Extract dependencies
+const dependencies = bowerJson.dependencies ? Object.keys(bowerJson.dependencies).map(dep => dep.replace(/^purescript-/, '')) : []
+
+// Function to get the latest version from Pursuit
+function getLatestVersion(packageName) {
+  return new Promise((resolve, reject) => {
+    const url = `https://pursuit.purescript.org/packages/purescript-${packageName}`;
+    https.get(url, (res) => {
+      if (res.statusCode === 302) {
+        const version = res.headers.location.match(/\/([0-9]+\.[0-9]+\.[0-9]+)$/)[1];
+        resolve(version);
+      } else {
+        reject(new Error(`Failed to get version for ${packageName}`));
+      }
+    }).on('error', reject);
+  });
+}
+
+// Main function
+async function main() {
+  try {
+    const version = await getLatestVersion(name);
+    console.log(`Version: ${version}`);
+
+    let spagoYaml;
+    if (fs.existsSync(outputFile)) {
+      // Update existing spago.yaml
+      spagoYaml = YAML.parse(fs.readFileSync(outputFile, 'utf8'));
+      spagoYaml.package.publish = {
+        license,
+        version,
+        location: {
+          githubOwner,
+          githubRepo: repoName
+        }
+      };
+      // Ensure the order of fields
+      const orderedPackage = {
+        name: spagoYaml.package.name,
+        publish: spagoYaml.package.publish,
+        dependencies: Array.from(new Set(spagoYaml.package.dependencies)),
+        test: spagoYaml.package.test || { main: "Test.Main", dependencies: Array.from(new Set(["console", "effect", ...dependencies])) },
+        ...Object.fromEntries(
+          Object.entries(spagoYaml.package)
+            .filter(([key]) => !['name', 'publish', 'dependencies', 'test'].includes(key))
+        )
+      };
+      spagoYaml.package = orderedPackage;
+    } else {
+      // Create new spago.yaml
+      spagoYaml = {
+        package: {
+          name,
+          publish: {
+            license,
+            version,
+            location: {
+              githubOwner,
+              githubRepo: repoName
+            }
+          },
+          dependencies,
+          test: {
+            main: "Test.Main",
+            dependencies: []
+          }
+        },
+        workspace: {
+          packageSet: {
+            registry: "60.5.0"
+          },
+          extraPackages: {}
+        }
+      };
+    }
+
+    // Write to spago.yaml
+    fs.writeFileSync(outputFile, YAML.stringify(spagoYaml), 'utf8');
+    console.log(`Transformation complete. Updated output written to ${outputFile}.`);
+  } catch (error) {
+    console.error('An error occurred:', error);
+  }
+}
+
+main();

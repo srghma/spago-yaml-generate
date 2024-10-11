@@ -43,67 +43,6 @@ import { immediateDirs, spagoFilesNotIgnoredByGit, readSpagoFileAndReturnPathAnd
 const projectsDir = process.env.HOME + '/projects';
 // const spagoExePath = `${projectsDir}/spago/bin/index.dev.js`
 
-// // Helper function to check if a directory contains spago.yaml
-// function hasSpagoYaml(dir) {
-//   return fs.existsSync(path.join(dir, 'spago.yaml'));
-// }
-//
-// // Helper function to run the command and parse the output
-// function getPackageInfo(dir) {
-//   try {
-//     const cmd = `${spagoExePath} ls packages --json`;
-//     const output = execSync(cmd, { cwd: dir, encoding: 'utf8' });
-//     return JSON.parse(output);
-//   } catch (error) {
-//     console.error(`Failed to run command in ${dir}:`, error.message);
-//     return null;
-//   }
-// }
-//
-// // Traverse the projects directory to find directories with spago.yaml
-// const dirsWithSpagoYaml = fs.readdirSync(projectsDir)
-//   .map(name => path.join(projectsDir, name))
-//   .filter(fs.lstatSync)
-//   .filter(hasSpagoYaml);
-//
-// function getWorkspacePackages(dir) {
-//   const packageInfo = getPackageInfo(dir);
-//   if (!packageInfo) {
-//     return [];
-//   }
-//   return Object.entries(packageInfo)
-//     .filter(([, details]) => details.type === 'workspace')
-//     .map(([name, details]) => [name, dir, details.value.path]);
-// }
-//
-// const namePathPairs = dirsWithSpagoYaml.flatMap(getWorkspacePackages)
-
-/**
- * Recursively find all 'spago.yaml' files in a given directory.
- * @param {string} dir - Directory to start the search from.
- * @returns {string[]} - Array of file paths.
- */
-function findSpagoFiles(dir) {
-  // let results = [];
-  //
-  // // Read all items in the directory
-  // const list = fs.readdirSync(dir);
-  // list.forEach((file) => {
-  //   const filePath = path.join(dir, file);
-  //   const stat = fs.statSync(filePath);
-  //
-  //   // If it's a directory, recurse into it
-  //   if (stat && stat.isDirectory()) {
-  //     results = results.concat(findSpagoFiles(filePath));
-  //   } else if (file === 'spago.yaml') {
-  //     results.push(filePath);
-  //   }
-  // });
-  //
-  // return results;
-  //
-}
-
 async function main() {
   const projectRoots = immediateDirs(projectsDir);
   const spagoFilesNotIgnored = (await Promise.all(projectRoots.map(spagoFilesNotIgnoredByGit))).flat();
