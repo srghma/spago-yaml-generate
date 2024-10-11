@@ -20,6 +20,8 @@ console.log('bowerJson', bowerJson)
 
 // Extract information
 const name = (bowerJson.name || path.basename(process.cwd())).replace(/^purescript-/, '');
+const description = bowerJson.description;
+// const authors = bowerJson.authors;
 const license = bowerJson.license || "MIT";
 const repoUrl = (bowerJson.repository || {}).url || `https://github.com/purescript-contrib/purescript-${name}`;
 const repoName = path.basename(repoUrl, '.git');
@@ -55,6 +57,8 @@ async function main() {
       spagoYaml = YAML.parse(fs.readFileSync(outputFile, 'utf8'));
       spagoYaml.package.publish = {
         license,
+        description,
+        // authors,
         version,
         location: {
           githubOwner,
@@ -78,6 +82,8 @@ async function main() {
       spagoYaml = {
         package: {
           name,
+          description,
+          // authors,
           publish: {
             license,
             version,
