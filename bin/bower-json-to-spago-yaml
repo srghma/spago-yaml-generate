@@ -2,7 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import https from 'node:https';
+import axios from 'axios';
 import YAML from 'yaml';
 
 const inputFile = 'bower.json';
@@ -28,22 +28,63 @@ const repoName = path.basename(repoUrl, '.git');
 const githubOwner = repoUrl.split('/').slice(-2, -1)[0];
 
 // Extract dependencies
-const dependencies = bowerJson.dependencies ? Object.keys(bowerJson.dependencies).map(dep => dep.replace(/^purescript-/, '')) : []
+let dependencies = { ...bowerJson.dependencies, ...bowerJson.devDependencies }
+dependencies = Object.keys(dependencies).map(dep => dep.replace(/^purescript-/, ''))
+dependencies = Array.from(new Set(["console", "effect", ...dependencies]))
 
-// Function to get the latest version from Pursuit
-function getLatestVersion(packageName) {
-  return new Promise((resolve, reject) => {
-    const url = `https://pursuit.purescript.org/packages/purescript-${packageName}`;
-    https.get(url, (res) => {
-      if (res.statusCode === 302) {
-        const version = res.headers.location.match(/\/([0-9]+\.[0-9]+\.[0-9]+)$/)[1];
-        resolve(version);
-      } else {
-        reject(new Error(`Failed to get version for ${packageName}`));
-      }
-    }).on('error', reject);
-  });
+// Function to remove keys with empty values
+function removeEmptyKeys(obj) {
+  if (typeof obj !== 'object' || obj === null) {
+    return obj; // Return if not an object
+  }
+  for (const key in obj) {
+    if (obj[key] === '' || obj[key] === null || obj[key] === undefined) {
+      delete obj[key]; // Remove the key if its value is empty
+    } else {
+      // Recursively process nested objects
+      removeEmptyKeys(obj[key]);
+    }
+  }
+  return obj;
 }
+
+// if I request https://pursuit.purescript.org/packages/purescript-unicode/
+// it will redirect to https://pursuit.purescript.org/packages/purescript-unicode/6.0.0
+// get version from this redirection
+// if 404 - return 1.0.0
+async function getLatestVersion(packageName) {
+  try {
+    const url = `https://pursuit.purescript.org/packages/purescript-${packageName}`;
+    const response = await axios.get(url);
+
+    // The final URL after redirection
+    const redirectedUrl = response.request.res.responseUrl;
+
+    // Extract the version from the URL using regex
+    const versionMatch = redirectedUrl.match(/\/(\d+\.\d+\.\d+)$/);
+
+    if (versionMatch) {
+      const latestVersion = versionMatch[1];
+      console.log(`Latest version: ${latestVersion}`);
+      return latestVersion;
+    } else {
+      throw new Error('Could not find version in the URL');
+    }
+  } catch (error) {
+    // Check if the error response is a 404
+    if (error.response && error.response.status === 404) {
+      console.log('Package not found. Returning default version 1.0.0.');
+      return '1.0.0'; // Return default version on 404 error
+    } else {
+      console.error('Error fetching the package:', error.message);
+      // Handle other errors if needed; you could throw an error or return a specific message
+      throw new Error('Failed to fetch package information.');
+    }
+  }
+}
+
+// Example usage
+getLatestVersion('unicode').then(version => console.log(`Version: ${version}`)).catch(console.error);
 
 // Main function
 async function main() {
@@ -57,7 +98,6 @@ async function main() {
       spagoYaml = YAML.parse(fs.readFileSync(outputFile, 'utf8'));
       spagoYaml.package.publish = {
         license,
-        description,
         // authors,
         version,
         location: {
@@ -68,12 +108,13 @@ async function main() {
       // Ensure the order of fields
       const orderedPackage = {
         name: spagoYaml.package.name,
+        description,
         publish: spagoYaml.package.publish,
         dependencies: Array.from(new Set(spagoYaml.package.dependencies)),
-        test: spagoYaml.package.test || { main: "Test.Main", dependencies: Array.from(new Set(["console", "effect", ...dependencies])) },
+        test: spagoYaml.package.test || { main: "Test.Main", dependencies },
         ...Object.fromEntries(
           Object.entries(spagoYaml.package)
-            .filter(([key]) => !['name', 'publish', 'dependencies', 'test'].includes(key))
+            .filter(([key]) => !['name', 'publish', 'description', 'dependencies', 'test'].includes(key))
         )
       };
       spagoYaml.package = orderedPackage;
@@ -108,10 +149,13 @@ async function main() {
     }
 
     // Write to spago.yaml
-    fs.writeFileSync(outputFile, YAML.stringify(spagoYaml), 'utf8');
+    fs.writeFileSync(outputFile, YAML.stringify(removeEmptyKeys(spagoYaml)), 'utf8');
     console.log(`Transformation complete. Updated output written to ${outputFile}.`);
+    // Exit the process once everything is done
+    process.exit(0);
   } catch (error) {
     console.error('An error occurred:', error);
+    process.exit(1);  // Exit with an error code
   }
 }
 
