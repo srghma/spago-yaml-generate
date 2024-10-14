@@ -84,7 +84,7 @@ async function getLatestVersion(packageName) {
 }
 
 // Example usage
-getLatestVersion('unicode').then(version => console.log(`Version: ${version}`)).catch(console.error);
+// getLatestVersion('unicode').then(version => console.log(`Version: ${version}`)).catch(console.error);
 
 // Main function
 async function main() {
